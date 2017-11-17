@@ -1,0 +1,79 @@
+#!/bin/bash
+### Define variables ###
+variable Boxsize equal 40.0
+variable dt equal 0.002
+variable cutoff equal 1.122462 # Cut at min energy, 2^(1/6)*sigma
+variable cc_cutoff equal 6.73477229
+variable delta equal 2.5
+variable epsilon equal 1.0
+variable sigma equal 1.0
+variable cc_sigma equal 6.0
+variable kapa equal 30
+variable maxbond_length equal 1.5
+variable d_monomer equal 0.0
+variable m_monomer equal 5.0
+variable Temp equal 1.0
+variable d_particle equal 6.0
+variable m_particle equal 565.486677646
+variable N_particle equal 5
+variable damp_coll equal 3.6
+variable damp_poly equal 5.0
+variable vcmx equal vcm(all,x)
+variable vcmy equal vcm(all,y)
+variable vcmz equal vcm(all,z)
+variable fout equal 5000
+variable runtime equal 500000000
+variable fremcom equal 100
+variable frestart equal 50000000
+
+units lj
+boundary p p p
+atom_style hybrid bond sphere
+
+pair_style lj/expand ${cc_cutoff}
+pair_modify shift yes
+bond_style fene
+special_bonds lj 0.0 1.0 1.0
+
+read_data data.equilSys_LD
+
+group small type 1
+set group small diameter ${d_monomer}
+set group small mass ${m_monomer}
+
+group big type 3
+set group big diameter ${d_particle}
+set group big mass ${m_particle}
+
+group solute union small big
+atom_modify first solute
+
+pair_coeff 1 1 ${epsilon} ${sigma} 0.0 ${cutoff}
+pair_coeff 1 2 0 ${sigma} 0.0 ${cutoff}
+pair_coeff 2 2 0 ${sigma} 0.0 ${cutoff}
+pair_coeff 1 3 ${epsilon} ${sigma} ${delta} ${cutoff}
+pair_coeff 3 3 ${epsilon} ${cc_sigma} 0.0 ${cc_cutoff}
+pair_coeff 2 3 0 ${sigma} 0.0 ${cutoff}
+
+bond_coeff 1 ${kapa} ${maxbond_length} ${epsilon} ${sigma}
+
+velocity all create ${Temp} 63859 dist gaussian mom yes rot no
+
+fix 1 small langevin ${Temp} ${Temp} ${damp_poly} 72364 
+fix 2 big langevin ${Temp} ${Temp} ${damp_coll} 34252
+fix 3 all nve
+fix RMV all momentum ${fremcom} linear 1 1 1
+compute COM all com
+fix COM all ave/time 1 1 ${fout} c_COM[1] c_COM[2] c_COM[3] file COM.out
+thermo_style custom time pe ke etotal temp c_COM[1] c_COM[2] c_COM[3] v_vcmx v_vcmy v_vcmz
+thermo ${fout}
+
+dump INIT solute xyz ${runtime} initial.xyz
+dump TRJ solute dcd ${fout} Langevin.dcd
+dump_modify TRJ unwrap yes
+
+restart ${frestart} polycoll*.restart
+
+timestep ${dt}
+run ${runtime}
+write_data data.*.equil
